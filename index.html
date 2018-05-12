@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Future</title>
+    <script>
+        'use strict';
+        // не удалять эту строку
+        delete window.Promise;
+    </script>
+</head>
+<body>
+
+<script>
+    'use strict';
+    class Future {
+        constructor(callback = () => {}) {
+            this.state = 'pending';
+            this.value = null;
+            this.error = null;
+            this.futureHandlers = [];
+            callback(this.resolve.bind(this), this.rejectWithCheck.bind(this));
+        }
+
+        fulfill(error, value) {
+            if (this.state !== 'pending') {
+                return;
+            }
+            this.value = value;
+            this.error = null;
+            this.state = 'fulfilled';
+            this.broadcast();
+        };
+
+        reject(error, value) {
+            if (this.state !== 'pending') {
+                return;
+            }
+            this.error = error;
+            this.value = null;
+            this.state = 'rejected';
+            this.broadcast();
+        };
+
+        next(callback) {
+            let newFuture = new Future();
+            newFuture.callback = typeof callback === 'function' ? callback : null;
+            this.futureHandlers.push(newFuture);
+            this.broadcast();
+            return newFuture;
+        };
+
+        broadcast() {
+            if (this.state === 'pending') {
+                return;
+            }
+            let future = this;
+            const resolver = this.state === 'fulfilled' ? 'resolve' : 'rejectWithCheck';
+
+            setTimeout(function () {
+                future.futureHandlers.splice(0).forEach(function (futureHandler) {
+                    try {
+                        if (futureHandler.callback) {
+                            let result = futureHandler.callback(future.error, future.value);
+                            if (result instanceof Future) {
+                                result.parent = futureHandler;
+                            }
+                            futureHandler[resolver](result);
+                        } else {
+                            futureHandler[resolver](future.error, future.value);
+                        }
+                    } catch (e) {
+                        futureHandler.reject(e);
+                    }
+                })
+            }, 0);
+        };
+
+        resolve(value) {
+            if (value instanceof Future) {
+                value.value = value.parent.value;
+                value.error = value.parent.error;
+                value.next(value.parent.futureHandlers[0].callback);
+            } else {
+                this.fulfill(null, value);
+            }
+        };
+
+        rejectWithCheck(error) {
+            if (error instanceof Future) {
+                error.value = error.parent.value;
+                error.error = error.parent.error;
+                error.next(error.parent.futureHandlers[0].callback);
+            } else {
+                this.reject(error, null);
+            }
+        };
+    }
+</script>
+
+<script>
+    'use strict';
+    /**
+     * ЗАДАНИЕ
+     * Написать свою реализацию класса Future с функционалом, похожим на промисы
+     * Для навешивания колбеков используется метод .next, который принимает колбек
+     * с двумя аргументами: err и result
+     *
+     * Если Future завершается 'успешно', то колбэк вызывается с аргументами err === null
+     * и result равным результату Future
+     * В противном случае, аргумент err содержит в себе объект ошибки
+     */
+
+
+    const future = new Future(function (resolve, reject) {
+        setTimeout(function () {
+            resolve(1)
+        }, 1000);
+    })
+        .next(function (err, result) {
+            console.log('Error:' + err);
+            console.log('Result: ' + result);
+            // err === null
+            // result === 1
+            return 2;
+        })
+        .next(function (err, result) {
+            console.log('Error:' + err);
+            console.log('Result: ' + result);
+            // err === null
+            // result === 2
+            throw -42;
+        })
+        .next(function (err, result) {
+            console.log('Error:' + err);
+            console.log('Result: ' + result);
+            // err === -42
+            // result === null
+            return new Future(function (resolve, reject) {
+                setTimeout(function () {
+                    reject('err')
+                }, 1000);
+            })
+        })
+        .next(function (err, result) {
+            console.log('Error:' + err);
+            console.log('Result: ' + result);
+            // err === 'err'
+            // result === null
+        });
+
+</script>
+
+
+</body>
+</html>
